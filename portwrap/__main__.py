@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import os
+import select
 import socket
 import subprocess
 import sys
@@ -17,37 +18,27 @@ def temp_socket_name():
     return os.path.join(tempfile.mkdtemp(), "slirp4netns.sock")
 
 
-def bwrap():
+def build_bwrap_cmd(namespaced_cmd, fd_userns_block_r, fd_info_w):
     """
     Create a new network and user namespace with bwrap, and
-    return the PID of the wrapped process, not of bwrap itself.
+    return the PID of the wrapped process.
     """
-    # We cannot wait for the process to terminate to collect stdout,
-    # so we write the PID to a temporary file.
-    f = tempfile.NamedTemporaryFile()
-    pid_file = f.name
-    bwrap_cmd = [
+    bwrap_prefix = [
         "bwrap",
         "--dev-bind",
         "/",
         "/",
         "--unshare-net",
+        "--unshare-user",
+        "--userns-block-fd",
+        str(fd_userns_block_r),
         "--die-with-parent",
-        "sh",
-        "-c",
-        f"echo $$ > {pid_file}; while true ; do sleep 600 ; done",
+        "--info-fd",
+        str(fd_info_w),
     ]
-    p = subprocess.Popen(bwrap_cmd)
-    while True:
-        lines = open(pid_file).readlines()
-        # wait for pid file to contain pid
-        if len(lines) == 0:
-            time.sleep(0.1)
-            continue
-        bwrapped_pid = lines[0].strip()
-        break
-    logging.info(f"Wrapping PID: {bwrapped_pid}")
-    return bwrapped_pid
+    bwrap_cmd = ["bwrap"] + bwrap_prefix + namespaced_cmd
+
+    return bwrap_cmd
 
 
 def slirp4netns(bwrapped_pid):
@@ -63,12 +54,13 @@ def slirp4netns(bwrapped_pid):
         str(bwrapped_pid),
         "tap0",
     ]
-    logging.debug('Running: {" ".join(cmd)}')
+    logging.info(f'Running: {" ".join(cmd)}')
     p = subprocess.Popen(cmd)
     while True:
         if os.path.exists(sock):
             break
         time.sleep(0.1)
+    time.sleep(2)
     # Return the process to keep it running
     return p, sock
 
@@ -87,7 +79,7 @@ def forward(host_port, guest_port, slirp_sock):
             "guest_port": guest_port,
         },
     }
-    logging.debug(rule)
+    logging.info(rule)
     # Communicate the rule to slirp4netns
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.connect(slirp_sock)
@@ -97,7 +89,7 @@ def forward(host_port, guest_port, slirp_sock):
         # list says)
         recv = client.recv(1024)
         client.close()
-    logging.debug(recv)
+    logging.info(recv)
 
 
 def usage():
@@ -105,37 +97,71 @@ def usage():
     """
 
 
-def portwrap(host_port, guest_port, command):
+def build_namespaced_cmd(command, guest_port):
     """
-    Run a command in a user and network namespace, forwarding traffic from
-    a host port to a port in the namespace.
+    Use specified command as a template to construct a new command.
     """
     namespaced_cmd = []
     for arg in command:
         if "{guest-port}" in arg:
             arg = arg.replace("{guest-port}", str(guest_port))
         namespaced_cmd.append(arg)
+    return namespaced_cmd
 
-    bwrapped_pid = bwrap()
 
-    slirp_p, slirp_sock = slirp4netns(bwrapped_pid)
+def portwrap(host_port, guest_port, command):
+    """
+    Run a command in a user and network namespace, forwarding traffic from
+    a host port to a port in the namespace.
+    """
+    namespaced_cmd = build_namespaced_cmd(command, guest_port)
 
-    forward(host_port, guest_port, slirp_sock)
+    # to receive information about the running container
+    fd_info_r, fd_info_w = os.pipe()
 
-    # Start jupyter in a namespace
-    nsenter_cmd = [
-        "nsenter",
-        "--preserve-credentials",
-        "-t",
-        str(bwrapped_pid),
-        "--net",
-        "--user",
-    ]
-    cmd = nsenter_cmd + namespaced_cmd
-    try:
-        subprocess.run(cmd)
-    except KeyboardInterrupt as e:
-        pass
+    # to block until namespace is ready
+    fd_userns_block_r, fd_userns_block_w = os.pipe()
+
+    pid = os.fork()
+
+    if pid != 0:  # Parent
+        logging.info('parent starting')
+        # We don't write to this fd
+        os.close(fd_info_w)
+        # We don't read from this fd
+        os.close(fd_userns_block_r)
+
+        # Read the wrapped process's pid
+        select.select([fd_info_r], [], [])
+        data = json.load(os.fdopen(fd_info_r))
+        child_pid = str(data["child-pid"])
+
+        # Run slirp4netns
+        logging.info(f'parent starting slirp4netns with {child_pid=}')
+        slirp_p, slirp_sock = slirp4netns(child_pid)
+
+        # Forward traffic from host to guest
+        logging.info(f'parent forwarding from {host_port=} to {guest_port=}')
+        forward(host_port, guest_port, slirp_sock)
+
+        # Stop blocking
+        logging.info(f'parent unblocking')
+        os.write(fd_userns_block_w, b"1")
+
+        logging.info('parent finished')
+    else:  # Child
+        # Ignore info's read fd
+        os.close(fd_info_r)
+
+        # Ignore userns_block's write fd
+        os.close(fd_userns_block_w)
+
+        os.set_inheritable(fd_info_w, True)
+        os.set_inheritable(fd_userns_block_r, True)
+
+        bwrap_cmd = build_bwrap_cmd(namespaced_cmd, fd_userns_block_r, fd_info_w)
+        logging.info(f'child execlp: {bwrap_cmd}')
+        os.execlp(*bwrap_cmd)
 
 
 def main():
@@ -165,5 +191,5 @@ def main():
     portwrap(args.host_port, args.guest_port, remainder)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
