@@ -18,7 +18,7 @@ def temp_socket_name():
     return os.path.join(tempfile.mkdtemp(), "slirp4netns.sock")
 
 
-def build_bwrap_cmd(namespaced_cmd, fd_userns_block_r, fd_info_w):
+def build_bwrap_cmd(namespaced_cmd, fd_info_w):
     """
     Create a new network and user namespace with bwrap, and
     return the PID of the wrapped process.
@@ -30,8 +30,6 @@ def build_bwrap_cmd(namespaced_cmd, fd_userns_block_r, fd_info_w):
         "/",
         "--unshare-net",
         "--unshare-user",
-        "--userns-block-fd",
-        str(fd_userns_block_r),
         "--die-with-parent",
         "--info-fd",
         str(fd_info_w),
@@ -119,17 +117,12 @@ def portwrap(host_port, guest_port, command):
     # to receive information about the running container
     fd_info_r, fd_info_w = os.pipe()
 
-    # to block until namespace is ready
-    fd_userns_block_r, fd_userns_block_w = os.pipe()
-
     pid = os.fork()
 
     if pid != 0:  # Parent
-        logging.info('parent starting')
+        logging.info("parent starting")
         # We don't write to this fd
         os.close(fd_info_w)
-        # We don't read from this fd
-        os.close(fd_userns_block_r)
 
         # Read the wrapped process's pid
         select.select([fd_info_r], [], [])
