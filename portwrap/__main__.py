@@ -130,32 +130,28 @@ def portwrap(host_port, guest_port, command):
         child_pid = str(data["child-pid"])
 
         # Run slirp4netns
-        logging.info(f'parent starting slirp4netns with {child_pid=}')
+        logging.info(f"parent starting slirp4netns with {child_pid=}")
         slirp_p, slirp_sock = slirp4netns(child_pid)
 
         # Forward traffic from host to guest
-        logging.info(f'parent forwarding from {host_port=} to {guest_port=}')
+        logging.info(f"parent forwarding from {host_port=} to {guest_port=}")
         forward(host_port, guest_port, slirp_sock)
 
-        # Stop blocking
-        logging.info(f'parent unblocking')
-        os.write(fd_userns_block_w, b"1")
-
-        logging.info('parent finished')
+        logging.info("parent finished")
     else:  # Child
         # Ignore info's read fd
+        logging.info(f"child starting")
         os.close(fd_info_r)
 
-        # Ignore userns_block's write fd
-        os.close(fd_userns_block_w)
-
         os.set_inheritable(fd_info_w, True)
-        os.set_inheritable(fd_userns_block_r, True)
 
-        bwrap_cmd = build_bwrap_cmd(namespaced_cmd, fd_userns_block_r, fd_info_w)
-        logging.info(f'child execlp: {bwrap_cmd}')
+        bwrap_cmd = build_bwrap_cmd(namespaced_cmd, fd_info_w)
+        logging.info(f"child execlp: {bwrap_cmd}")
         os.execlp(*bwrap_cmd)
 
+    # attempt to wait on bwrap to finish
+    logging.info(f"calling waitpid {pid}")
+    os.waitpid(pid, 0)
 
 def main():
     parser = argparse.ArgumentParser(usage=usage())
