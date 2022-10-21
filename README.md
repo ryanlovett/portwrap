@@ -7,8 +7,8 @@ accessible to the namespace and not to the host.
 
 This might be useful if the program it launches knows how to proxy traffic to other programs in the namespace.
 
-portwrap is a python script that calls nsenter, slirp4netns, and bubblewrap
-(bwrap). It is currently in a proof-of-concept stage.
+portwrap is a python script that calls slirp4netns and bubblewrap (bwrap). It
+is currently in a proof-of-concept stage.
 
 Preparation
 -----------
