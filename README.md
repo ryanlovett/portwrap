@@ -35,7 +35,7 @@ Examples
 --------
 1. Start JupyterLab on the host port 9876.
 
-   ```console
+```console
 % portwrap -p 9876 -P 8888 jupyter lab --port={guest-port} --ip=0.0.0.0 --no-browser
 ```
 
