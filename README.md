@@ -30,3 +30,13 @@ optional arguments:
   -P GUEST_PORT, --guest-port GUEST_PORT
                         Namespace-accessible port
 ```
+
+Examples
+--------
+1. Start JupyterLab on the host port 9876.
+
+   ```console
+% portwrap -p 9876 -P 8888 jupyter lab --port={guest-port} --ip=0.0.0.0 --no-browser
+```
+
+   Within the user/network namespace, jupyter will be listening on port 8888. If [jupyter-server-proxy](https://github.com/jupyterhub/jupyter-server-proxy) is installed, its proxied services will be sandboxed by the namespaces and will be reachable by jupyter_server, but not by other processes on the host.
