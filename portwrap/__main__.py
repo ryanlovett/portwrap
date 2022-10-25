@@ -91,7 +91,7 @@ def forward(host_port, guest_port, slirp_sock):
 
 
 def usage():
-    return """Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND ...]
+    return """Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND_ARG ...]
     """
 
 
