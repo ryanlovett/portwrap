@@ -4,6 +4,7 @@ import json
 import logging
 import os
 import select
+import signal
 import socket
 import subprocess
 import sys
@@ -107,11 +108,33 @@ def build_namespaced_cmd(command, guest_port):
     return namespaced_cmd
 
 
+def read_bwrap_info_fd(fd):
+    """Return bwrap's child pid."""
+    select.select([fd], [], [])
+    data = json.load(os.fdopen(fd))
+    return str(data["child-pid"])
+
+
+def stop_slirp4netns(proc):
+    """Shutdown slirp4netns."""
+    if proc is not None:
+        proc.kill()
+
+
 def portwrap(host_port, guest_port, command):
     """
     Run a command in a user and network namespace, forwarding traffic from
     a host port to a port in the namespace.
     """
+    slirp_p = None
+
+    def handler(signum, frame):
+        """Catch SIGINT (e.g. keyboard interrupt) and kill slirp4netns."""
+        logging.info(f"Signal handler called with signal {signum}")
+        stop_slirp4netns(slirp_p)
+
+    signal.signal(signal.SIGINT, handler)
+
     namespaced_cmd = build_namespaced_cmd(command, guest_port)
 
     # to receive information about the running container
@@ -125,9 +148,7 @@ def portwrap(host_port, guest_port, command):
         os.close(fd_info_w)
 
         # Read the wrapped process's pid
-        select.select([fd_info_r], [], [])
-        data = json.load(os.fdopen(fd_info_r))
-        child_pid = str(data["child-pid"])
+        child_pid = read_bwrap_info_fd(fd_info_r)
 
         # Run slirp4netns
         logging.info(f"parent starting slirp4netns with {child_pid=}")
@@ -152,6 +173,8 @@ def portwrap(host_port, guest_port, command):
     # attempt to wait on bwrap to finish
     logging.info(f"calling waitpid {pid}")
     os.waitpid(pid, 0)
+    stop_slirp4netns(slirp_p)
+
 
 def main():
     parser = argparse.ArgumentParser(usage=usage())
