@@ -16,10 +16,16 @@ Preparation
 1. The administrator [must configure subuid/subgid mapping](https://rootlesscontaine.rs/getting-started/common/subuid/).
 2. Install [slurp4netns](https://github.com/rootless-containers/slirp4netns) and [bubblewrap](https://github.com/containers/bubblewrap).
 
+Installation
+------------
+```console
+pip install git+https://github.com/ryanlovett/portwrap
+```
+
 Usage
 -----
 ```console
-% ~/.local/bin/portwrap --help
+% portwrap --help
 usage: Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND ...]
 
 
@@ -31,9 +37,11 @@ optional arguments:
                         Namespace-accessible port
 ```
 
+If `COMMAND` uses an argument to set a listening port, you can specify the template string `{guest-port}` instead, and `portwrap` will substitute the value of `GUEST_PORT`.
+
 Examples
 --------
-1. Start JupyterLab on the host port 9876.
+1. Start JupyterLab on the host port 9876. Note that use of the template string `{guest-port}` below is literal -- you don't substitute anything for it.
 
 ```console
 % portwrap -p 9876 -P 8888 jupyter lab --port={guest-port} --ip=0.0.0.0 --no-browser
