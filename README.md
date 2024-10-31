@@ -10,56 +10,72 @@ This might be useful if the program it launches knows how to proxy traffic to ot
 portwrap is a python script that calls `slirp4netns` and `bubblewrap` (`bwrap`).
 
 ```mermaid
----
-config:
-  layout: fixed
----
-flowchart LR
- subgraph subGraph0["User Process"]
-        guest-port["Guest Port"]
-        process["Jupyter Server"]
-  end
- subgraph subGraph1["Sub Process 1"]
-        sp1-port["Port"]
-        sub-process-1["RStudio"]
-  end
- subgraph subGraph2["Sub Process 2"]
-        sp2-port["Port"]
-        sub-process-2["VS Code"]
-  end
- subgraph namespace_network["namespace: network"]
-        subGraph0
-        subGraph1
-        subGraph2
-  end
- subgraph tapGraph["Tap"]
-        tap["Tap"]
-        host-port["Host Port"]
-  end
-    process -.-o guest-port
-    process --> sub-process-1 & sub-process-2
-    sub-process-1 -.-o sp1-port
-    sub-process-2 -.-o sp2-port
-    tap -.-o host-port
-    tap --> guest-port
-    portwrap["portwrap"] --> fork["fork()"]
-    fork -- parent --> slirp4netns["slirp4netns"]
-    fork -- child --> bwrap["bwrap"]
-    bwrap --> process
-    slirp4netns -- brings up TAP interface --> tap
-    bwrap -- user process PID --> slirp4netns
-    fork@{ shape: diam}
-    style guest-port fill:#BBDEFB
-    style process fill:#FFFFFF
-    style subGraph0 fill:#FFF9C4
-    style subGraph1 fill:#FFF9C4
-    style subGraph2 fill:#FFF9C4
-    style host-port fill:#BBDEFB
-    style portwrap fill:#FFF9C4
-    style slirp4netns fill:#FFF9C4
-    style bwrap fill:#FFF9C4
-    style namespace_network fill:#C8E6C9
-    style tapGraph fill:#E1BEE7
+stateDiagram
+  direction TB
+  state User_Process {
+    direction TB
+    process --> guest_port
+    guest_port
+    process
+  }
+  state Sub_Process_1 {
+    direction TB
+    sub_process_1 --> sp1_port
+    sp1_port
+    sub_process_1
+  }
+  state Sub_Process_2 {
+    direction TB
+    sub_process_2 --> sp2_port
+    sp2_port
+    sub_process_2
+  }
+  state namespace {
+    direction TB
+    process --> Sub_Process_1
+    process --> Sub_Process_2
+    state User_Process {
+      direction TB
+      guest_port
+      process
+    }
+    state Sub_Process_1 {
+      direction TB
+      sp1_port
+      sub_process_1
+    }
+    state Sub_Process_2 {
+      direction TB
+      sp2_port
+      sub_process_2
+    }
+  }
+  state TapGraph {
+    direction TB
+    tap --> host_port
+    tap
+    host_port
+  }
+  TapGraph --> guest_port
+  portwrap --> fork
+  fork --> slirp4netns:parent
+  fork --> bwrap:child
+  bwrap --> User_Process
+  slirp4netns --> TapGraph:brings up TAP interface
+  bwrap --> slirp4netns:user process PID
+  fork:fork()
+  User_Process:User Process
+  guest_port:Guest Port
+  process:Jupyter Server
+  Sub_Process_1:Sub Process 1
+  sp1_port:Port
+  sub_process_1:RStudio
+  Sub_Process_2:Sub Process 2
+  sp2_port:Port
+  sub_process_2:VS Code
+  TapGraph:Tap
+  tap:Tap
+  host_port:Host Port
 ```
 
 ![Architecture diagram](./diagram.svg)
