@@ -19,7 +19,19 @@ def temp_socket_name():
     return os.path.join(tempfile.mkdtemp(), "slirp4netns.sock")
 
 
-def build_bwrap_cmd(namespaced_cmd, fd_info_w):
+def built_in_resolv_conf():
+    """
+    Create a resolv.conf that uses slirp4netns's built in DNS.
+    """
+    filename = os.path.join(tempfile.mkdtemp(), "resolv.conf")
+    f = open(filename, "w")
+    f.write("nameserver 10.0.2.3\n")
+    f.flush()
+    f.close()
+    return filename
+
+
+def build_bwrap_cmd(namespaced_cmd, fd_info_w, host_dns, built_in_dns):
     """
     Create a new network and user namespace with bwrap, and
     return the PID of the wrapped process.
@@ -35,6 +47,14 @@ def build_bwrap_cmd(namespaced_cmd, fd_info_w):
         "--info-fd",
         str(fd_info_w),
     ]
+
+    # Use slirp4netns's built-in DNS server. This is useful for systems
+    # that use loopback addresses (dnsmasq, systemd-resolved) in
+    # /etc/resolv.conf which can't be reached from the namespace.
+    if not host_dns:
+        resolv_conf = built_in_resolv_conf()
+        bwrap_prefix += ["--ro-bind", resolv_conf, "/etc/resolv.conf"]
+
     bwrap_cmd = ["bwrap"] + bwrap_prefix + namespaced_cmd
 
     return bwrap_cmd
@@ -92,7 +112,7 @@ def forward(host_port, guest_port, slirp_sock):
 
 
 def usage():
-    return """Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND_ARG ...]
+    return """Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT [-H] COMMAND [COMMAND_ARG ...]
     """
 
 
@@ -121,7 +141,7 @@ def stop_slirp4netns(proc):
         proc.kill()
 
 
-def portwrap(host_port, guest_port, command):
+def portwrap(host_port, guest_port, host_dns, command):
     """
     Run a command in a user and network namespace, forwarding traffic from
     a host port to a port in the namespace.
@@ -166,7 +186,7 @@ def portwrap(host_port, guest_port, command):
 
         os.set_inheritable(fd_info_w, True)
 
-        bwrap_cmd = build_bwrap_cmd(namespaced_cmd, fd_info_w)
+        bwrap_cmd = build_bwrap_cmd(namespaced_cmd, fd_info_w, host_dns)
         logging.info(f"child execlp: {bwrap_cmd}")
         os.execlp(*bwrap_cmd)
 
@@ -194,13 +214,20 @@ def main():
         type=int,
         help="Namespace-accessible port",
     )
+    parser.add_argument(
+        "-H",
+        "--host-dns",
+        dest="host_dns",
+        action=store_true,
+        help="Disable slirp4netns' built-in DNS",
+    )
     args, remainder = parser.parse_known_args()
 
     if len(remainder) == 0:
         parser.print_usage()
         sys.exit(1)
 
-    portwrap(args.host_port, args.guest_port, remainder)
+    portwrap(args.host_port, args.guest_port, args.host_dns, remainder)
 
 
 if __name__ == "__main__":
