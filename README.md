@@ -78,8 +78,6 @@ stateDiagram
   host_port:Host Port
 ```
 
-![Architecture diagram](./diagram.svg)
-
 Preparation
 -----------
 
