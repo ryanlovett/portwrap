@@ -130,7 +130,7 @@ def slirp4netns(bwrapped_pid):
     return p, sock
 
 
-def forward(host_port, guest_port, slirp_sock):
+def forward(host_addr, host_port, guest_port, slirp_sock):
     """
     Create a slirp4netns forwarding rule from the host to the jupyter server.
     """
@@ -138,7 +138,7 @@ def forward(host_port, guest_port, slirp_sock):
         "execute": "add_hostfwd",
         "arguments": {
             "proto": "tcp",
-            "host_addr": "0.0.0.0",
+            "host_addr": host_addr,
             "host_port": host_port,
             "guest_addr": SLIRP_GUEST,
             "guest_port": guest_port,
@@ -157,9 +157,16 @@ def forward(host_port, guest_port, slirp_sock):
     logging.info(recv)
 
 
+def ip_address(addr):
+    """argparse type for an IP address."""
+    try:
+        return str(ipaddress.ip_address(addr))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not an IP address: {addr!r}")
+
+
 def usage():
-    return """Usage: portwrap [-h] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND_ARG ...]
-    """
+    return "portwrap [-h] [--host-addr HOST_ADDR] -p HOST_PORT -P GUEST_PORT COMMAND [COMMAND_ARG ...]"
 
 
 def build_namespaced_cmd(command, guest_port):
@@ -187,7 +194,7 @@ def stop_slirp4netns(proc):
         proc.kill()
 
 
-def portwrap(host_port, guest_port, command):
+def portwrap(host_addr, host_port, guest_port, command):
     """
     Run a command in a user and network namespace, forwarding traffic from
     a host port to a port in the namespace.
@@ -226,8 +233,10 @@ def portwrap(host_port, guest_port, command):
         slirp_p, slirp_sock = slirp4netns(child_pid)
 
         # Forward traffic from host to guest
-        logging.info(f"parent forwarding from {host_port=} to {guest_port=}")
-        forward(host_port, guest_port, slirp_sock)
+        logging.info(
+            f"parent forwarding from {host_addr=} {host_port=} to {guest_port=}"
+        )
+        forward(host_addr, host_port, guest_port, slirp_sock)
 
         # Let bwrap run the command
         os.write(fd_block_w, b"1")
@@ -258,6 +267,13 @@ def portwrap(host_port, guest_port, command):
 def main():
     parser = argparse.ArgumentParser(usage=usage())
     parser.add_argument(
+        "--host-addr",
+        dest="host_addr",
+        default="0.0.0.0",
+        type=ip_address,
+        help="Host address to listen on (default: 0.0.0.0, all interfaces)",
+    )
+    parser.add_argument(
         "-p",
         "--host-port",
         dest="host_port",
@@ -279,7 +295,7 @@ def main():
         parser.print_usage()
         sys.exit(1)
 
-    portwrap(args.host_port, args.guest_port, remainder)
+    portwrap(args.host_addr, args.host_port, args.guest_port, remainder)
 
 
 if __name__ == "__main__":
