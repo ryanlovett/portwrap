@@ -1,0 +1,18 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "portwrap"
+version = "0.0.1"
+description = "Sandbox ports behind a proxy"
+readme = "README.md"
+requires-python = ">=3.8"
+authors = [{ name = "Ryan Lovett", email = "rylo@berkeley.edu" }]
+keywords = ["bwrap", "slirp4netns", "nsenter"]
+
+[project.urls]
+Homepage = "https://github.com/ryanlovett/portwrap"
+
+[project.scripts]
+portwrap = "portwrap.__main__:main"
